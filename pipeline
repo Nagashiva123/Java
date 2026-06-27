@@ -1,0 +1,74 @@
+pipeline {
+    agent any
+
+    environment {
+        UAT_DB_HOST  = 'localhost:1521/DEVDB'
+        PROD_DB_HOST = 'localhost:1521/PRODDB'
+    }
+
+    stages {
+
+        stage('Pull SQL from Git') {
+            steps {
+                checkout scm
+                echo 'SQL files pulled from Git'
+            }
+        }
+
+        stage('Apply to UAT DB') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'UAT_DB_CREDS',
+                    usernameVariable: 'DB_USER',
+                    passwordVariable: 'DB_PASS'
+                )]) {
+                    sh '''
+                        echo "Running SQL on UAT..."
+                        sqlplus ${DB_USER}/${DB_PASS}@localhost:1521/DEVDB @sql/uat_migration.sql
+                    '''
+                }
+            }
+        }
+
+        stage('Validate UAT') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'UAT_DB_CREDS',
+                    usernameVariable: 'DB_USER',
+                    passwordVariable: 'DB_PASS'
+                )]) {
+                    sh '''
+                        echo "Validating UAT tables..."
+                        sqlplus ${DB_USER}/${DB_PASS}@localhost:1521/DEVDB @sql/validate.sql
+                    '''
+                }
+            }
+        }
+
+        stage('Approval to deploy PROD') {
+            steps {
+                input message: 'UAT looks good. Deploy to PROD?', ok: 'Yes, deploy!'
+            }
+        }
+
+        stage('Deploy to PROD') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'PROD_DB_CREDS',
+                    usernameVariable: 'DB_USER',
+                    passwordVariable: 'DB_PASS'
+                )]) {
+                    sh '''
+                        echo "Deploying to PROD..."
+                        sqlplus ${DB_USER}/${DB_PASS}@localhost:1521/PRODDB @sql/uat_migration.sql
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo 'Deployment to PROD successful!' }
+        failure { echo 'Pipeline failed. Check logs.' }
+    }
+}
