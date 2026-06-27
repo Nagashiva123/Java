@@ -1,0 +1,2 @@
+create table shiva (Name varchar2(200),ID Integer primary key);
+insert into shiva  values ('Naga',1);
